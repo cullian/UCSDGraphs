@@ -17,8 +17,12 @@ import geography.GeographicPoint;
 
 public class MapNode {
 
-	private GeographicPoint location;
-	private List<MapEdge> edges;
+	private GeographicPoint location;		// location of intersection
+	private List<MapEdge> roads;			// list of streets leaving this intersection
+	// distanceToStart used for shortest path algorithms
+	private double distanceToStart;
+	// predictedDistanceToGoal used for A* algorithm
+	private double predictedDistanceToGoal;
 	
 	/**
 	 * Constructor sets location with empty edge list
@@ -27,7 +31,9 @@ public class MapNode {
 	
 	public MapNode(GeographicPoint loc) {
 		this.location = loc;
-		edges = new ArrayList<MapEdge> ();
+		roads = new ArrayList<MapEdge> ();
+		this.distanceToStart = Double.POSITIVE_INFINITY;
+		this.predictedDistanceToGoal = Double.POSITIVE_INFINITY;
 		
 	}
 
@@ -37,9 +43,59 @@ public class MapNode {
 	 * @param add edges to list
 	 */
 	public void addEdge(MapEdge edge) {
-		if (!this.edges.contains(edge)) {
-			edges.add(edge);
+		if (!this.roads.contains(edge)) {
+			roads.add(edge);
 		}
+	}
+
+	/**
+	 * @return the distanceToStart
+	 */
+	public double getDistanceToStart() {
+		return distanceToStart;
+	}
+
+	/**
+	 * @param distanceToStart the distanceToStart to set
+	 */
+	public void setDistanceToStart(double distanceToStart) {
+		this.distanceToStart = distanceToStart;
+	}
+
+	/**
+	 * @param distanceToStart the distanceToStart to reset
+	 */
+	public void reSetDistanceToStart() {
+		this.distanceToStart = Double.POSITIVE_INFINITY;
+	}
+
+	/** Predicted distance from start to goal
+	 * @return the predictedDistanceToGoal
+	 */
+	public double getPredictedDistance() {
+		return predictedDistanceToGoal + distanceToStart;
+	}
+
+
+	/**
+	 * @return the predictedDistanceToGoal
+	 */
+	public double getPredictedDistanceToGoal() {
+		return predictedDistanceToGoal;
+	}
+
+	/**
+	 * @param predictedDistanceToGoal the predictedDistanceToGoal to set
+	 */
+	public void reSetPredictedDistanceToGoal() {
+		this.predictedDistanceToGoal = Double.POSITIVE_INFINITY;
+	}
+
+	/**
+	 * @param predictedDistanceToGoal the predictedDistanceToGoal to set
+	 */
+	public void setPredictedDistanceToGoal(double predictedDistanceToGoal) {
+		this.predictedDistanceToGoal = predictedDistanceToGoal;
 	}
 
 	/**
@@ -47,7 +103,7 @@ public class MapNode {
 	 * @return the edges
 	 */
 	public List<MapEdge> getEdges() {
-		return new ArrayList<MapEdge>(edges);
+		return new ArrayList<MapEdge>(roads);
 	}
 
 	/**
@@ -62,7 +118,7 @@ public class MapNode {
 	 */
 	@Override
 	public String toString() {
-		return "MapNode [location=" + location + ", edges=" + edges + "]";
+		return "MapNode [location=" + location + ", edges=" + roads + "]";
 	}
 
 	
