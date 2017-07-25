@@ -28,7 +28,11 @@ import geography.GeographicPoint;
 import util.GraphLoader;
 
 public class MapGraph {
+	// map of locations mapped to MapNodes for respective intersections
 	private Map<GeographicPoint, MapNode> intersections;
+	// map of ending locations mapped to previously found paths (only works for A*)
+	private List<LinkedList<GeographicPoint>> prevShortestPaths;
+//	private HashMap<Integer, List<LinkedList<GeographicPoint>>> prevShortestPaths;
 	private int numVertices;
 	private int numEdges;
 	
@@ -38,6 +42,7 @@ public class MapGraph {
 	public MapGraph()
 	{
 		intersections = new HashMap<GeographicPoint, MapNode>();
+		prevShortestPaths = new LinkedList<LinkedList<GeographicPoint>>();
 		numVertices = 0;
 		numEdges = 0;
 	}
@@ -156,6 +161,7 @@ public class MapGraph {
 	public List<GeographicPoint> bfs(GeographicPoint start, 
 			 					     GeographicPoint goal, Consumer<GeographicPoint> nodeSearched)
 	{
+		// validate input
 		if (!validNode(start) || !validNode(goal) || nodeSearched == null) {
 			return null;
 		}
@@ -177,7 +183,7 @@ public class MapGraph {
 			nodeSearched.accept(curr);
 			// if we found goal, return path
 			if (curr.equals(goal)) {
-				return constructPath(start, goal, parentMap);
+				return constructPath(start, goal, parentMap, false);
 			}
 			// for each of current nodes neighbors not in visited list
 			for (MapEdge neighborEdge : intersections.get(curr).getEdges()) {
@@ -250,7 +256,6 @@ public class MapGraph {
 			System.out.print("DIJKSTRA visiting[NODE at location (" + current +") intersects streets: ");
 			// Hook for visualization.  See writeup.
 			nodeSearched.accept(current);
-
 			// if current is not visited
 			if (!visited.contains(current)) {
 				// add current to visited set
@@ -259,7 +264,7 @@ public class MapGraph {
 				if (current.equals(goal)) {
 					System.out.print("]\n");
 					System.out.println("Dijkstra Node Count: " + count);
-					return constructPath(start, goal, parentMap);
+					return constructPath(start, goal, parentMap, false);
 				}
 				// for each of current nodes neighbors not in visited list
 				for (MapEdge edgeToNeighbor : intersections.get(current).getEdges()) {
@@ -321,6 +326,11 @@ public class MapGraph {
 		if (!validNode(start) || !validNode(goal) || nodeSearched == null) {
 			return null;
 		}
+		// check for previous path going that contains start and goal
+		List<GeographicPoint> path = checkForPrevPath(start, goal, nodeSearched);
+		if (path != null) {
+			return path;
+		}
 		// Initialize variables
 		// map of parent nodes for each node searched(used to create path)
 		HashMap<GeographicPoint, GeographicPoint> parentMap = new HashMap<GeographicPoint, GeographicPoint>();
@@ -351,11 +361,23 @@ public class MapGraph {
 			if (!visited.contains(current)) {
 				// add current to visited set
 				visited.add(current);
+
+				// if current node and goal are in prevShortestPaths
+				if ((path = checkForPrevPath(current, goal, nodeSearched)) != null) {
+					// Concatenate beginning of path to previous path
+					path.remove(current);
+					List<GeographicPoint> fullPath = constructPath(start, current, parentMap, false);
+					fullPath.addAll(path);
+					// add path to previous paths
+					addPrevPath(fullPath);
+					return fullPath;
+				}
+
 				// if we found goal, return path
 				if (current.equals(goal)) {
 					System.out.print("]\n");
 					System.out.println("A * Node Count: " + count);
-					return constructPath(start, goal, parentMap);
+					return constructPath(start, goal, parentMap, true);
 				}
 				// for each of current nodes neighbors not in visited list
 				for (MapEdge edgeToNeighbor : intersections.get(current).getEdges()) {
@@ -395,8 +417,57 @@ public class MapGraph {
 		return null;
 	}
 
-	
-	
+	/**
+	 * A helper method to add the path to the previous path list
+	 * uses dummy for consumer object so it will not interfere with
+	 * visualization during check
+	 * @param path
+	 */	
+	public void addPrevPath(List<GeographicPoint> path) {
+		// Dummy variable
+        Consumer<GeographicPoint> nodeSearched = (x) -> {};
+		GeographicPoint start = path.get(0);
+		GeographicPoint end = path.get(path.size()-1);
+		// check if this path exists inside a previous one
+		List<GeographicPoint> check = checkForPrevPath(start, end, nodeSearched);
+		if (check == null) {
+			prevShortestPaths.add((LinkedList<GeographicPoint>) path);
+		}
+	}
+
+	/**Helper to check if we have found this path before
+	 * @param start
+	 * @param goal
+	 * @param nodeSearched
+	 * @return path if it exists, else null
+	 */
+	private LinkedList<GeographicPoint> checkForPrevPath(GeographicPoint start, GeographicPoint goal, Consumer<GeographicPoint> nodeSearched) {
+		LinkedList<GeographicPoint> path = new LinkedList<GeographicPoint>();
+		GeographicPoint curr = goal;
+		// if we already have a path with the goal
+		// and the start is before the goal in the path
+		for (LinkedList<GeographicPoint> shortPath : prevShortestPaths) {
+			if (shortPath.contains(goal) && shortPath.contains(start) 
+					&& shortPath.indexOf(goal) > shortPath.indexOf(start)) {
+				// copy the path from goal to start
+				System.out.println("We found a previous path!");
+				while (!curr.equals(start)) {
+					path.addFirst(curr);
+					// Hook for visualization.  See writeup.
+					nodeSearched.accept(curr);
+					// get curr's parent
+					int parentIndex = shortPath.indexOf(curr);
+					curr = (GeographicPoint) shortPath.get(parentIndex - 1);
+				}
+				// don't forget start
+				path.addFirst(curr);
+				
+				return path;
+			}
+		}
+		return null;
+	}
+
 	/**
 	 * A helper method to construct the path from the parentMap
 	 * @param start
@@ -406,17 +477,21 @@ public class MapGraph {
 	 * start to goal
 	 */
 	private List<GeographicPoint> constructPath(GeographicPoint start, GeographicPoint goal,
-			HashMap<GeographicPoint, GeographicPoint> parentMap) {
-		GeographicPoint curr = goal;
+			HashMap<GeographicPoint, GeographicPoint> parentMap, boolean aStar) {
 		LinkedList<GeographicPoint> path = new LinkedList<GeographicPoint>();
+		GeographicPoint curr = goal;
+		
 		while (!curr.equals(start)) {
+			// add curr to path
 			path.addFirst(curr);
 			// get curr's parent
 			curr = parentMap.get(curr);
 		}
 		// don't forget start
 		path.addFirst(curr);
-		
+		if (aStar) {
+			addPrevPath(path);
+		}
 		return path;
 	}
 
@@ -461,61 +536,91 @@ public class MapGraph {
 		List<GeographicPoint> path = firstMap.bfs(start, goal);
 		System.out.println(path);
 		
-		/* Here are some test cases you should try before you attempt 
-		 * the Week 3 End of Week Quiz, EVEN IF you score 100% on the 
-		 * programming assignment.
-		 */
-		
-		MapGraph simpleTestMap = new MapGraph();
-		GraphLoader.loadRoadMap("data/testdata/simpletest.map", simpleTestMap);
-		
-		GeographicPoint testStart = new GeographicPoint(1.0, 1.0);
-		GeographicPoint testEnd = new GeographicPoint(8.0, -1.0);
-		
-		System.out.println("Test 1 using simpletest: Dijkstra should be 9 and AStar should be 5");
-		List<GeographicPoint> testroute = simpleTestMap.dijkstra(testStart,testEnd);
-		List<GeographicPoint> testroute2 = simpleTestMap.aStarSearch(testStart,testEnd);
-		System.out.println(testroute);
-		System.out.println(testroute2);
-		
-		MapGraph testMap = new MapGraph();
-		GraphLoader.loadRoadMap("data/maps/utc.map", testMap);
-		
-		// A very simple test using real data
-		testStart = new GeographicPoint(32.869423, -117.220917);
-		testEnd = new GeographicPoint(32.869255, -117.216927);
-		System.out.println("Test 2 using utc: Dijkstra should be 13 and AStar should be 5");
-		testroute = testMap.dijkstra(testStart,testEnd);
-		testroute2 = testMap.aStarSearch(testStart,testEnd);
-		System.out.println(testroute);
-		System.out.println(testroute2);
-		
-		
-		// A slightly more complex test using real data
-		testStart = new GeographicPoint(32.8674388, -117.2190213);
-		testEnd = new GeographicPoint(32.8697828, -117.2244506);
-		System.out.println("Test 3 using utc: Dijkstra should be 37 and AStar should be 10");
-		testroute = testMap.dijkstra(testStart,testEnd);
-		testroute2 = testMap.aStarSearch(testStart,testEnd);
-		System.out.println(testroute);
-		System.out.println(testroute2);
-		
-		
-		
-		/* Use this code in Week 3 End of Week Quiz */
-		MapGraph theMap = new MapGraph();
-		System.out.print("DONE. \nLoading the map...");
-		GraphLoader.loadRoadMap("data/maps/utc.map", theMap);
-		System.out.println("DONE.");
+		// Test previousShortestPaths
+		System.out.println("***********************************");
+		System.out.println("Testing previous path");
+		path = firstMap.aStarSearch(start, goal);
+		System.out.println(path);
+		System.out.println("***********************************");
+		start = new GeographicPoint(4.0, 1.0);
+		System.out.println("New start at " + start.getX() + ", " + start.getY());
+		path = firstMap.aStarSearch(start, goal);
+		System.out.println(path);
+		System.out.println("Previous Path List: ");
+		System.out.println(firstMap.prevShortestPaths);
+		System.out.println("***********************************");
+		start = new GeographicPoint(4.0, 2.0);
+		System.out.println("New start at " + start.getX() + ", " + start.getY());
+		path = firstMap.aStarSearch(start, goal);
+		System.out.println(path);
+		System.out.println("Previous Path List: ");
+		System.out.println(firstMap.prevShortestPaths);
+		System.out.println("***********************************");
+		start = new GeographicPoint(4.0, 0.0);
+		System.out.println("New start at " + start.getX() + ", " + start.getY());
+		path = firstMap.aStarSearch(start, goal);
+		System.out.println(path);
+		System.out.println("Previous Path List: ");
+		System.out.println(firstMap.prevShortestPaths);
+		System.out.println("***********************************");
 
-		GeographicPoint start1 = new GeographicPoint(32.8648772, -117.2254046);
-		GeographicPoint end = new GeographicPoint(32.8660691, -117.217393);
 		
-		
-		List<GeographicPoint> route = theMap.dijkstra(start1,end);
-		List<GeographicPoint> route2 = theMap.aStarSearch(start1,end);
-		System.out.println(route);
-		System.out.println(route2);
+//		
+//		/* Here are some test cases you should try before you attempt 
+//		 * the Week 3 End of Week Quiz, EVEN IF you score 100% on the 
+//		 * programming assignment.
+//		 */
+//		
+//		MapGraph simpleTestMap = new MapGraph();
+//		GraphLoader.loadRoadMap("data/testdata/simpletest.map", simpleTestMap);
+//		
+//		GeographicPoint testStart = new GeographicPoint(1.0, 1.0);
+//		GeographicPoint testEnd = new GeographicPoint(8.0, -1.0);
+//		
+//		System.out.println("Test 1 using simpletest: Dijkstra should be 9 and AStar should be 5");
+//		List<GeographicPoint> testroute = simpleTestMap.dijkstra(testStart,testEnd);
+//		List<GeographicPoint> testroute2 = simpleTestMap.aStarSearch(testStart,testEnd);
+//		System.out.println(testroute);
+//		System.out.println(testroute2);
+//		
+//		MapGraph testMap = new MapGraph();
+//		GraphLoader.loadRoadMap("data/maps/utc.map", testMap);
+//		
+//		// A very simple test using real data
+//		testStart = new GeographicPoint(32.869423, -117.220917);
+//		testEnd = new GeographicPoint(32.869255, -117.216927);
+//		System.out.println("Test 2 using utc: Dijkstra should be 13 and AStar should be 5");
+//		testroute = testMap.dijkstra(testStart,testEnd);
+//		testroute2 = testMap.aStarSearch(testStart,testEnd);
+//		System.out.println(testroute);
+//		System.out.println(testroute2);
+//		
+//		
+//		// A slightly more complex test using real data
+//		testStart = new GeographicPoint(32.8674388, -117.2190213);
+//		testEnd = new GeographicPoint(32.8697828, -117.2244506);
+//		System.out.println("Test 3 using utc: Dijkstra should be 37 and AStar should be 10");
+//		testroute = testMap.dijkstra(testStart,testEnd);
+//		testroute2 = testMap.aStarSearch(testStart,testEnd);
+//		System.out.println(testroute);
+//		System.out.println(testroute2);
+//		
+//		
+//		
+//		/* Use this code in Week 3 End of Week Quiz */
+//		MapGraph theMap = new MapGraph();
+//		System.out.print("DONE. \nLoading the map...");
+//		GraphLoader.loadRoadMap("data/maps/utc.map", theMap);
+//		System.out.println("DONE.");
+//
+//		GeographicPoint start1 = new GeographicPoint(32.8648772, -117.2254046);
+//		GeographicPoint end = new GeographicPoint(32.8660691, -117.217393);
+//		
+//		
+//		List<GeographicPoint> route = theMap.dijkstra(start1,end);
+//		List<GeographicPoint> route2 = theMap.aStarSearch(start1,end);
+//		System.out.println(route);
+//		System.out.println(route2);
 
 		
 		
